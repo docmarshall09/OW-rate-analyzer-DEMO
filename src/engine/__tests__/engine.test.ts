@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { ingest } from '../ingest'
+import { ingest, detectAnchor } from '../ingest'
 import { analyze } from '../analyze'
 import { DEFAULT_PARAMS } from '../types'
 
@@ -183,8 +183,9 @@ describe.skipIf(!hasFixtures)('ppTriangle — per-cohort development triangle', 
     const py1Filled = result.ppTriangle[0].filter((v) => v !== null).length
     const py4Filled = result.ppTriangle[3].filter((v) => v !== null).length
     expect(py1Filled).toBeGreaterThan(py4Filled)
-    // PY4 sold 2024-02-01 to 2025-02-01; as of 2025-01-31 max maturity ≈ Q4
-    expect(py4Filled).toBeLessThanOrEqual(8) // at most a few early quarters
+    // PY4 sold 2024-02-01 to ~2025-01-31; oldest contract is ~12 months = Q4 at eval date.
+    // Q5+ exposure is zero by construction, so ≤5 is the tight constraint.
+    expect(py4Filled).toBeLessThanOrEqual(5)
     // PY1 sold 2021-02-01 to 2022-02-01; as of 2025-01-31 max maturity ≈ Q16
     expect(py1Filled).toBeGreaterThanOrEqual(12)
   })
@@ -217,6 +218,48 @@ describe.skipIf(!hasFixtures)('ppTriangle — per-cohort development triangle', 
     expect(near(result.emergence[11].cumEnd, 0.697)).toBe(true)          // Q12
     expect(near(result.emergence[14].cumEnd, 0.861)).toBe(true)          // Q15
     expect(near(result.emergence[19].cumEnd, 1.0, 0.001)).toBe(true)     // Q20
+  })
+})
+
+// ── detectAnchor timezone regression ─────────────────────────────────────────
+//
+// The old implementation used `new Date(year, 1, 1)` (local-time constructor).
+// In any timezone with a negative UTC offset (Americas), Feb 1 local time is
+// ahead of 2021-02-01T00:00:00Z, so `anchor > min` → anchor rolls back to 2020.
+// The fix uses `Date.UTC(year, 1, 1)` to compare UTC dates consistently.
+//
+// To confirm this test actually guards the bug: replace Date.UTC(year,1,1) with
+// new Date(year,1,1) in detectAnchor and run this suite — this block goes red.
+
+describe('detectAnchor — timezone regression', () => {
+  let savedTZ: string | undefined
+
+  beforeAll(() => {
+    savedTZ = process.env.TZ
+    // UTC-5 (Eastern Standard): 2021-02-01T00:00:00Z is Jan 31 7pm local.
+    // new Date(2021,1,1) there = 2021-02-01T05:00:00Z, which is AFTER min → rollback.
+    process.env.TZ = 'America/New_York'
+  })
+
+  afterAll(() => {
+    if (savedTZ === undefined) delete process.env.TZ
+    else process.env.TZ = savedTZ
+  })
+
+  it('min sale exactly on 2021-02-01T00:00:00Z → anchor resolves to 2021, not 2020', () => {
+    const boundary = new Date('2021-02-01T00:00:00Z')
+    const anchor = detectAnchor([boundary])
+    // Old: new Date(2021,1,1) in EST = 2021-02-01T05:00:00Z > boundary → 2020
+    // New: Date.UTC(2021,1,1)       = 2021-02-01T00:00:00Z ≤ boundary → 2021
+    expect(anchor.getUTCFullYear()).toBe(2021)
+    expect(anchor.getUTCMonth()).toBe(1)  // February (0-indexed)
+    expect(anchor.getUTCDate()).toBe(1)
+  })
+
+  it('anchor is never after the min sale date (UTC invariant)', () => {
+    const boundary = new Date('2021-02-01T00:00:00Z')
+    const anchor = detectAnchor([boundary])
+    expect(anchor.getTime()).toBeLessThanOrEqual(boundary.getTime())
   })
 })
 
