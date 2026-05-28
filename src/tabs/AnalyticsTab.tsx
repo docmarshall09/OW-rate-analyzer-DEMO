@@ -329,58 +329,118 @@ function ExhibitEmergence({ result }: { result: AnalysisResult }) {
 // ── Exhibit 2: PP Heatmap ─────────────────────────────────────────────────────
 
 function ExhibitHeatmap({ result }: { result: AnalysisResult }) {
-  const { triangles } = result as any
-  // Use the loss/exposure triangle to compute per-cell PP
-  // We'll access via result.emergence context — but we need the raw triangles
-  // For display we'll show the emergence-derived values per quarter
-  const quarters = result.emergence
-  const pyLabels = ['PY1','PY2','PY3','PY4']
+  const { ppTriangle, lastCredibleQ } = result
+  const pyLabels = ['PY1', 'PY2', 'PY3', 'PY4']
 
-  // We don't have direct triangle access here — show emergence PP row × col heatmap
-  // using emergence[q].finalPP as the baseline column value
-  // The actual cell-level PP comes from triangles in the ingest result
-  // We'll approximate for display: show finalPP per column across all rows
-  const maxPP = Math.max(...quarters.map((e) => e.finalPP))
+  // Scale intensity against the global max of all observed (non-null) values
+  let maxPP = 0
+  for (const row of ppTriangle) {
+    for (const v of row) {
+      if (v !== null && v > maxPP) maxPP = v
+    }
+  }
 
   return (
     <div style={{ marginBottom: 'var(--space-7)' }}>
-      <p className="exhibit-label">Exhibit 2: Pure-Premium Triangle</p>
-      <h4 style={{ marginBottom: 'var(--space-3)' }}>Credibility-Weighted Pure Premium by Development Quarter</h4>
-      <p style={{ fontSize: '14px', color: 'var(--ow-mute)', marginBottom: 'var(--space-5)', maxWidth: 'none' }}>
-        Navy intensity ramp — darker cells indicate higher loss cost per exposure-year.
-        Gold = last credible quarter (Q{result.lastCredibleQ}); right of that line is projected tail.
+      <p className="exhibit-label">Exhibit 2: Pure-Premium Development Triangle</p>
+      <h4 style={{ marginBottom: 'var(--space-3)' }}>Incremental Pure Premium per Cohort ($/exposure-year)</h4>
+      <p style={{ fontSize: '14px', color: 'var(--ow-mute)', marginBottom: 'var(--space-4)', maxWidth: 'none' }}>
+        Each cell = paid losses ÷ exposure-years for that policy-year cohort and development quarter.
+        White = no exposure (beyond cohort maturity at eval date) — the natural unfilled lower-right.
+        Dashed outline = beyond last credible quarter (Q{lastCredibleQ}); data present but below
+        credibility threshold. Navy intensity ramp: darker = higher loss rate.
       </p>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 'var(--space-5)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+        {[
+          { color: 'rgba(11,30,63,0.75)', label: 'Observed (credible)' },
+          { color: 'rgba(11,30,63,0.35)', label: 'Observed (sub-threshold)', dashed: true },
+          { color: 'var(--ow-paper)', border: '1px solid var(--ow-line)', label: 'No data (beyond maturity)' },
+          { color: 'var(--ow-chart-4)', label: `Q${lastCredibleQ} last credible` },
+        ].map((l) => (
+          <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 14, height: 14,
+              background: l.color,
+              border: l.border ?? (l.dashed ? '1.5px dashed var(--ow-mute)' : '1px solid transparent'),
+              flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 12, color: 'var(--ow-mute)' }}>{l.label}</span>
+          </div>
+        ))}
+      </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', fontSize: '12px', width: '100%' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: '11px', width: '100%', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--ow-navy)' }}>PY</th>
-              {quarters.map((e) => (
-                <th key={e.q} style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 500, borderBottom: '1px solid var(--ow-navy)', color: e.q === result.lastCredibleQ ? 'var(--ow-chart-4)' : 'var(--ow-mute)', whiteSpace: 'nowrap' }}>
-                  Q{e.q}
-                </th>
-              ))}
+              <th style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 600, borderBottom: '1px solid var(--ow-navy)', width: '44px' }}>PY</th>
+              {Array.from({ length: 20 }, (_, qi) => {
+                const q = qi + 1
+                const isLast = q === lastCredibleQ
+                return (
+                  <th key={q} style={{
+                    padding: '4px 2px',
+                    textAlign: 'center',
+                    fontWeight: isLast ? 700 : 500,
+                    fontSize: 11,
+                    borderBottom: `2px solid ${isLast ? 'var(--ow-chart-4)' : 'var(--ow-navy)'}`,
+                    color: isLast ? 'var(--ow-chart-4)' : q > lastCredibleQ ? 'var(--ow-mute)' : 'var(--ow-ink)',
+                    whiteSpace: 'nowrap',
+                    minWidth: '40px',
+                  }}>
+                    Q{q}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {pyLabels.map((py) => (
-              <tr key={py}>
-                <td style={{ padding: '4px 8px', fontWeight: 600, borderBottom: '1px solid var(--ow-line)' }}>{py}</td>
-                {quarters.map((e) => {
-                  const intensity = maxPP > 0 ? e.finalPP / maxPP : 0
-                  const bg = `rgba(11,30,63,${(intensity * 0.85).toFixed(3)})`
-                  const textColor = intensity > 0.55 ? '#fff' : 'var(--ow-ink)'
+            {pyLabels.map((pyLabel, pyIdx) => (
+              <tr key={pyLabel}>
+                <td style={{ padding: '4px 8px', fontWeight: 600, fontSize: 12, borderBottom: '1px solid var(--ow-line)' }}>
+                  {pyLabel}
+                </td>
+                {ppTriangle[pyIdx].map((pp, qi) => {
+                  const q = qi + 1
+                  const isLastCredCol = q === lastCredibleQ
+                  const isProjZone = q > lastCredibleQ
+
+                  if (pp === null) {
+                    // No exposure — beyond cohort maturity
+                    return (
+                      <td key={q} style={{
+                        padding: '4px 2px',
+                        textAlign: 'center',
+                        borderBottom: '1px solid var(--ow-line)',
+                        borderLeft: isLastCredCol ? '2px solid var(--ow-chart-4)' : undefined,
+                        background: 'var(--ow-paper)',
+                        color: 'var(--ow-line)',
+                      }}>
+                        —
+                      </td>
+                    )
+                  }
+
+                  const intensity = maxPP > 0 ? pp / maxPP : 0
+                  // Sub-threshold cells render at half opacity with dashed border
+                  const alpha = isProjZone ? intensity * 0.40 : intensity * 0.85
+                  const bg = `rgba(11,30,63,${alpha.toFixed(3)})`
+                  const textColor = alpha > 0.45 ? '#fff' : isProjZone ? 'var(--ow-mute)' : 'var(--ow-ink)'
+
                   return (
-                    <td key={e.q} style={{
-                      padding: '5px 6px',
+                    <td key={q} style={{
+                      padding: '4px 2px',
                       textAlign: 'center',
                       background: bg,
                       color: textColor,
                       borderBottom: '1px solid var(--ow-line)',
+                      borderLeft: isLastCredCol ? '2px solid var(--ow-chart-4)' : undefined,
                       fontVariantNumeric: 'tabular-nums',
-                      outline: e.q === result.lastCredibleQ ? '2px solid var(--ow-chart-4)' : undefined,
+                      outline: isProjZone ? '1px dashed rgba(107,107,107,0.5)' : undefined,
+                      outlineOffset: '-1px',
+                      fontSize: 11,
                     }}>
-                      {e.finalPP > 0 ? `$${e.finalPP.toFixed(2)}` : '—'}
+                      ${pp.toFixed(1)}
                     </td>
                   )
                 })}

@@ -186,4 +186,11 @@ export interface AnalysisResult {
   method2AsIncurred: number
   method1OnLevel: number
   method2OnLevel: number
+  /**
+   * Per-cohort incremental pure premium: ppTriangle[pyIndex 0-3][qIndex 0-19].
+   * Value = loss / exposure for that cell ($/exposure-year), or null when
+   * the cell has zero exposure (i.e., beyond that cohort's maturity at eval date).
+   * Null cells form the natural unfilled lower-right of the development triangle.
+   */
+  ppTriangle: (number | null)[][]
 }

@@ -54,10 +54,10 @@ export function detectAnchor(saleDates: (Date | null)[]): Date {
   if (valid.length === 0) return new Date('2021-02-01')
   const minTs = valid.reduce((m, d) => Math.min(m, d.getTime()), Infinity)
   const min = new Date(minTs)
-  // walk back to the most recent Feb 1 on or before min
-  let year = min.getFullYear()
-  let anchor = new Date(year, 1, 1) // Feb 1 of that year
-  if (anchor > min) anchor = new Date(year - 1, 1, 1)
+  // Use UTC throughout to avoid local-timezone boundary issues with Excel serial dates
+  const year = min.getUTCFullYear()
+  let anchor = new Date(Date.UTC(year, 1, 1)) // Feb 1 of that year, UTC
+  if (anchor > min) anchor = new Date(Date.UTC(year - 1, 1, 1))
   return anchor
 }
 

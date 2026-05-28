@@ -158,6 +158,68 @@ describe.skipIf(!hasFixtures)('§6 validation — default params against canonic
   })
 })
 
+// ── ppTriangle exhibit tests ──────────────────────────────────────────────────
+
+describe.skipIf(!hasFixtures)('ppTriangle — per-cohort development triangle', () => {
+  let ir: ReturnType<typeof ingest>
+  let result: ReturnType<typeof analyze>
+
+  beforeAll(() => {
+    const toAB = (buf: Buffer): ArrayBuffer =>
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+    ir = ingest(toAB(fs.readFileSync(contractsPath)), toAB(fs.readFileSync(claimsPath)), new Date('2025-01-31'))
+    result = analyze(ir, DEFAULT_PARAMS)
+  })
+
+  it('PY1–PY4 rows are not identical', () => {
+    const rows = result.ppTriangle
+    // Rows must differ (PY4 is mostly null; PY1 has data through Q15+)
+    expect(JSON.stringify(rows[0])).not.toBe(JSON.stringify(rows[1]))
+    expect(JSON.stringify(rows[0])).not.toBe(JSON.stringify(rows[3]))
+    expect(JSON.stringify(rows[2])).not.toBe(JSON.stringify(rows[3]))
+  })
+
+  it('PY1 has more non-null cells than PY4 (older cohort = more development)', () => {
+    const py1Filled = result.ppTriangle[0].filter((v) => v !== null).length
+    const py4Filled = result.ppTriangle[3].filter((v) => v !== null).length
+    expect(py1Filled).toBeGreaterThan(py4Filled)
+    // PY4 sold 2024-02-01 to 2025-02-01; as of 2025-01-31 max maturity ≈ Q4
+    expect(py4Filled).toBeLessThanOrEqual(8) // at most a few early quarters
+    // PY1 sold 2021-02-01 to 2022-02-01; as of 2025-01-31 max maturity ≈ Q16
+    expect(py1Filled).toBeGreaterThanOrEqual(12)
+  })
+
+  it('ppTriangle is consistent with the aggregate emergence curve (credibility-weighted)', () => {
+    // For each quarter, re-derive observedPP from ppTriangle × exposure triangles
+    // and confirm it matches result.emergence[q].observedPP exactly.
+    for (let q = 0; q < 20; q++) {
+      let credExp = 0
+      let credLoss = 0
+      for (let py = 0; py < 4; py++) {
+        const exp = ir.triangles.exposure[py][q]
+        const pp = result.ppTriangle[py][q]
+        if (exp >= DEFAULT_PARAMS.credibilityThreshold && pp !== null) {
+          credExp += exp
+          credLoss += pp * exp  // pp * exp = original loss cell
+        }
+      }
+      const recomputedPP = credExp > 0 ? credLoss / credExp : 0
+      // Should match observed PP exactly (same arithmetic)
+      expect(Math.abs(recomputedPP - result.emergence[q].observedPP)).toBeLessThan(1e-8)
+    }
+  })
+
+  it('cohort triangle with tail projection reproduces §6 emergence milestones', () => {
+    // The ppTriangle consistency test above proves the observed curve is right.
+    // These milestones verify the full emergence (observed + projected tail).
+    expect(near(result.emergence[3].cumEnd,  0.006, 0.10)).toBe(true)  // Q4
+    expect(near(result.emergence[7].cumEnd,  0.396)).toBe(true)          // Q8
+    expect(near(result.emergence[11].cumEnd, 0.697)).toBe(true)          // Q12
+    expect(near(result.emergence[14].cumEnd, 0.861)).toBe(true)          // Q15
+    expect(near(result.emergence[19].cumEnd, 1.0, 0.001)).toBe(true)     // Q20
+  })
+})
+
 // ── Isolation tests (always run — use synthetic data) ─────────────────────────
 
 describe('exclusion priority logic', () => {

@@ -188,6 +188,15 @@ export function analyze(
   const asIncurredRollup = buildRollup('', contracts, claims, emergence, ultimatePP, asIncurredParams)
   const onLevelRollup = buildRollup('', contracts, claims, emergence, ultimatePP, { ...params, onLevel: true })
 
+  // Per-cohort incremental PP triangle: loss/exposure per cell, null = no exposure.
+  // Null forms the natural unfilled lower-right; PY4 (newest) is mostly null.
+  const ppTriangle: (number | null)[][] = Array.from({ length: 4 }, (_, py) =>
+    Array.from({ length: 20 }, (__, q) => {
+      const exp = triangles.exposure[py][q]
+      return exp > 0 ? triangles.loss[py][q] / exp : null
+    })
+  )
+
   return {
     params,
     emergence,
@@ -201,5 +210,6 @@ export function analyze(
     method2AsIncurred: asIncurredRollup.method2,
     method1OnLevel: onLevelRollup.method1,
     method2OnLevel: onLevelRollup.method2,
+    ppTriangle,
   }
 }
