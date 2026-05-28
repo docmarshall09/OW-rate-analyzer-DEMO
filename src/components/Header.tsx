@@ -1,6 +1,6 @@
 import React from 'react'
 
-const GITHUB_URL = 'https://github.com/marshalldeese/OW-rate-analyzer-DEMO'
+const GITHUB_URL = 'https://github.com/docmarshall09/OW-rate-analyzer-DEMO'
 
 export default function Header() {
   return (
