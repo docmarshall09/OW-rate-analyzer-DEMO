@@ -4,6 +4,23 @@ services:
     env: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+
+    headers:
+      # Immutable hashed assets — served with CORS open so any CDN edge or custom
+      # domain can load them, and cached for one year (hash changes on redeploy).
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /assets/*
+        name: Access-Control-Allow-Origin
+        value: "*"
+      # HTML must always revalidate so browsers pick up new hashes on redeploy.
+      - path: /
+        name: Cache-Control
+        value: no-cache
+
+    # SPA fallback: all non-file routes serve index.html.
+    # Render checks the static file first; this rule only fires on a 404.
     routes:
       - type: rewrite
         source: /*
